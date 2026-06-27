@@ -1,5 +1,5 @@
 diff --git a/Boards.h b/Boards.h
-index c0f6cc4..527adfc 100644
+index c0f6cc4..219a910 100644
 --- a/Boards.h
 +++ b/Boards.h
 @@ -69,6 +69,10 @@
@@ -13,20 +13,10 @@ index c0f6cc4..527adfc 100644
    #define PRODUCT_T32_10      0xB2
    #define BOARD_LORA32_V1_0   0x39
    #define MODEL_BA            0xBA // LilyGO T3 v1.0, 433 MHz
-@@ -219,7 +223,7 @@
-       #define DISPLAY OLED
-       #define HAS_PMU true
-       #define HAS_BLUETOOTH true
--      #define HAS_CONSOLE true
-+      #define HAS_CONSOLE false
-       #define HAS_SD false
-       #define HAS_EEPROM true
-       #define I2C_SDA 21
-@@ -1031,7 +1035,63 @@
+@@ -1031,6 +1035,65 @@
                -1  // pin_tcxo_enable
            }
        };
-- #elif BOARD_MODEL == BOARD_XIAO_S3
 +    #elif BOARD_MODEL == BOARD_EBYTE_EORA_S3
 +      #define IS_ESP32S3 true
 +      #define OCP_TUNED 0x38
@@ -59,11 +49,14 @@ index c0f6cc4..527adfc 100644
 +      const int pin_adc = 1;
 +
 +      const uint8_t interfaces[INTERFACE_COUNT] = {SX1262};
++      // HAS_TCXO is false: the EoRa-S3 (E22-900MM22S) uses a crystal, not a TCXO
++      // (confirmed against the Meshtastic CDEBYTE_EoRa-S3 variant). Enabling TCXO
++      // here leaves the radio reporting online but unable to TX/RX (XOSC_START_ERR).
 +      const bool interface_cfg[INTERFACE_COUNT][3] = {
 +                    // SX1262
 +          {
-+              true, // DEFAULT_SPI
-+              false, // HAS_TCXO -- EoRa-S3-900TB uses an XTAL, not a TCXO (per Meshtastic variant). Enabling TCXO causes XOSC_START_ERR -> radio "online" but no TX/RX.
++              true,  // DEFAULT_SPI
++              false, // HAS_TCXO
 +              true   // DIO2_AS_RF_SWITCH
 +          },
 +      };
@@ -83,10 +76,9 @@ index c0f6cc4..527adfc 100644
 +          }
 +      };
 +
-+    #elif BOARD_MODEL == BOARD_XIAO_S3
+  #elif BOARD_MODEL == BOARD_XIAO_S3
        #define IS_ESP32S3 true
  
-       #define HAS_DISPLAY true
 diff --git a/Device.h b/Device.h
 index fb250f4..8642614 100644
 --- a/Device.h
@@ -152,17 +144,25 @@ index 4b60819..d5ba14b 100644
        if (eeprom_read(eeprom_addr(ADDR_CONF_BSET)) == CONF_OK_BYTE) {
          uint8_t db_timeout = eeprom_read(eeprom_addr(ADDR_CONF_DBLK));
 diff --git a/Documentation/BUILDING.md b/Documentation/BUILDING.md
-index d995d31..cc3bdd0 100644
+index d995d31..b3f5558 100644
 --- a/Documentation/BUILDING.md
 +++ b/Documentation/BUILDING.md
 @@ -72,6 +72,7 @@ After flashing a custom board, you will also need to provision the EEPROM before
  0xA9: [820000000, 1020000000, 17, "820 - 1020 MHz", "rnode_firmware.hex", "SX1276"],
  0xA1: [410000000, 525000000, 22, "410 - 525 MHz", "rnode_firmware_t3s3.zip", "SX1268"],
  0xA6: [820000000, 1020000000, 22, "820 - 960 MHz", "rnode_firmware_t3s3.zip", "SX1262"],
-+0xD8: [820000000, 1020000000, 22, "820 - 1020 MHz", "rnode_firmware_ebyte_eora_s3.zip", "SX1262"],
++0xD8: [850000000, 960000000, 22, "850 - 960 MHz", "rnode_firmware_ebyte_eora_s3.zip", "SX1262"],
  0xA2: [410000000, 525000000, 17, "410 - 525 MHz", "rnode_firmware_ng21.zip", "SX1278"],
  0xA7: [820000000, 1020000000, 17, "820 - 1020 MHz", "rnode_firmware_ng21.zip", "SX1276"],
  0xA3: [410000000, 525000000, 17, "410 - 525 MHz", "rnode_firmware_ng20.zip", "SX1278"],
+@@ -105,6 +106,7 @@ PRODUCT_T32_21 = 0xB1
+ PRODUCT_H32_V2 = 0xC0
+ PRODUCT_H32_V3 = 0xC1
+ PRODUCT_TBEAM  = 0xE0
++PRODUCT_EBYTE_EORA = 0xEC
+ PRODUCT_HMBRW  = 0xF0
+ ```
+ 
 diff --git a/Makefile b/Makefile
 index 3a86441..fa31152 100644
 --- a/Makefile
@@ -267,31 +267,6 @@ index d02da4c..0a65892 100644
      while (!Serial);
    #endif
  
-diff --git a/Radio.cpp b/Radio.cpp
-index 52364dd..f686688 100644
---- a/Radio.cpp
-+++ b/Radio.cpp
-@@ -124,6 +124,11 @@ bool sx126x::preInit() {
-     _spiModem->begin();
-   #endif
- 
-+  #if BOARD_MODEL == BOARD_EBYTE_EORA_S3
-+    reset();
-+    delay(50);
-+  #endif
-+
-   // check version (retry for up to 2 seconds)
-   // TODO: Actually read version registers, not syncwords
-   long start = millis();
-@@ -709,6 +714,8 @@ void sx126x::enableTCXO() {
-       uint8_t buf[4] = {MODE_TCXO_1_8V_6X, 0x00, 0x00, 0xFF};
-     #elif BOARD_MODEL == BOARD_TBEAM_S_V1
-       uint8_t buf[4] = {MODE_TCXO_1_8V_6X, 0x00, 0x00, 0xFF};
-+    #elif BOARD_MODEL == BOARD_EBYTE_EORA_S3
-+      uint8_t buf[4] = {MODE_TCXO_1_8V_6X, 0x00, 0x00, 0xFF};
-     #elif BOARD_MODEL == BOARD_HELTEC_T114
-       uint8_t buf[4] = {MODE_TCXO_1_8V_6X, 0x00, 0x00, 0xFF};
-     #elif BOARD_MODEL == BOARD_E22_ESP32
 diff --git a/Utilities.h b/Utilities.h
 index 3c0f06e..4050a1b 100644
 --- a/Utilities.h
