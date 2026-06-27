@@ -232,6 +232,25 @@ index 8856316..97ed327 100644
      pinMode(pin_vbat, INPUT);
      return true;
    #elif BOARD_MODEL == BOARD_HELTEC32_V3
+diff --git a/RNode_Firmware_CE.ino b/RNode_Firmware_CE.ino
+index d02da4c..0a65892 100644
+--- a/RNode_Firmware_CE.ino
++++ b/RNode_Firmware_CE.ino
+@@ -179,11 +179,12 @@ void setup() {
+     boot_seq();
+   #endif
+ 
+-  #if BOARD_MODEL != BOARD_RAK4631 && BOARD_MODEL != BOARD_HELTEC_T114 && BOARD_MODEL != BOARD_TECHO && BOARD_MODEL != BOARD_T3S3 && BOARD_MODEL != BOARD_TBEAM_S_V1 && BOARD_MODEL != BOARD_OPENCOM_XL
++  #if BOARD_MODEL != BOARD_RAK4631 && BOARD_MODEL != BOARD_HELTEC_T114 && BOARD_MODEL != BOARD_TECHO && BOARD_MODEL != BOARD_T3S3 && BOARD_MODEL != BOARD_TBEAM_S_V1 && BOARD_MODEL != BOARD_OPENCOM_XL && BOARD_MODEL != BOARD_EBYTE_EORA_S3
+   // Some boards need to wait until the hardware UART is set up before booting
+   // the full firmware. In the case of the RAK4631/TECHO, the line below will wait
+   // until a serial connection is actually established with a master. Thus, it
+-  // is disabled on this platform.
++  // is disabled on this platform. The EoRa-S3 runs on battery (USB native CDC),
++  // so it must not block boot waiting for a USB host to open the port.
+     while (!Serial);
+   #endif
+ 
 diff --git a/Radio.cpp b/Radio.cpp
 index 52364dd..f686688 100644
 --- a/Radio.cpp
