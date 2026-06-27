@@ -1,0 +1,303 @@
+diff --git a/Boards.h b/Boards.h
+index c0f6cc4..527adfc 100644
+--- a/Boards.h
++++ b/Boards.h
+@@ -69,6 +69,10 @@
+   #define MODEL_DE            0xDE // Xiao ESP32S3 with Wio-SX1262 module, 433 MHz
+   #define MODEL_DD            0xDD // Xiao ESP32S3 with Wio-SX1262 module, 868 MHz
+ 
++  #define PRODUCT_EBYTE_EORA  0xEC
++  #define BOARD_EBYTE_EORA_S3 0x46 // Ebyte EoRa-S3 / EoRa PI
++  #define MODEL_D8            0xD8 // Ebyte EoRa-S3, 868/915 MHz with SX1262
++
+   #define PRODUCT_T32_10      0xB2
+   #define BOARD_LORA32_V1_0   0x39
+   #define MODEL_BA            0xBA // LilyGO T3 v1.0, 433 MHz
+@@ -219,7 +223,7 @@
+       #define DISPLAY OLED
+       #define HAS_PMU true
+       #define HAS_BLUETOOTH true
+-      #define HAS_CONSOLE true
++      #define HAS_CONSOLE false
+       #define HAS_SD false
+       #define HAS_EEPROM true
+       #define I2C_SDA 21
+@@ -1031,7 +1035,63 @@
+               -1  // pin_tcxo_enable
+           }
+       };
+- #elif BOARD_MODEL == BOARD_XIAO_S3
++    #elif BOARD_MODEL == BOARD_EBYTE_EORA_S3
++      #define IS_ESP32S3 true
++      #define OCP_TUNED 0x38
++
++      #define HAS_DISPLAY true
++      #define DISPLAY OLED
++      #define HAS_CONSOLE false
++      #define HAS_BLUETOOTH false // ESP32-S3 has no classic BT, only BLE
++      #define HAS_BLE true
++      #define HAS_NP false
++      #define HAS_SD false
++      #define HAS_EEPROM true
++      // No PMU chip; HAS_PMU true selects the simple-ADC battery path (LiPo on GPIO1)
++      #define HAS_PMU true
++
++      // 0.96" SSD1306 OLED on the shared I2C bus (Ebyte EoRa-S3 / Meshtastic)
++      #define I2C_SDA 18
++      #define I2C_SCL 17
++
++      #define HAS_INPUT true
++      #define HAS_SLEEP true
++      #define PIN_WAKEUP GPIO_NUM_0
++      #define WAKEUP_LEVEL 0
++
++      #define INTERFACE_COUNT 1
++
++      const int pin_btn_usr1 = 0;
++      const int pin_led_rx = 37;
++      const int pin_led_tx = 37;
++      const int pin_adc = 1;
++
++      const uint8_t interfaces[INTERFACE_COUNT] = {SX1262};
++      const bool interface_cfg[INTERFACE_COUNT][3] = {
++                    // SX1262
++          {
++              true, // DEFAULT_SPI
++              false, // HAS_TCXO -- EoRa-S3-900TB uses an XTAL, not a TCXO (per Meshtastic variant). Enabling TCXO causes XOSC_START_ERR -> radio "online" but no TX/RX.
++              true   // DIO2_AS_RF_SWITCH
++          },
++      };
++      const int8_t interface_pins[INTERFACE_COUNT][10] = {
++                  // SX1262
++          {
++               7, // pin_ss
++               5, // pin_sclk
++               6, // pin_mosi
++               3, // pin_miso
++              34, // pin_busy
++              33, // pin_dio
++               8, // pin_reset
++              -1, // pin_txen
++              -1, // pin_rxen
++              -1  // pin_tcxo_enable
++          }
++      };
++
++    #elif BOARD_MODEL == BOARD_XIAO_S3
+       #define IS_ESP32S3 true
+ 
+       #define HAS_DISPLAY true
+diff --git a/Device.h b/Device.h
+index fb250f4..8642614 100644
+--- a/Device.h
++++ b/Device.h
+@@ -214,7 +214,15 @@ bool device_firmware_ok() {
+ #if MCU_VARIANT == MCU_ESP32 || MCU_VARIANT == MCU_NRF52
+ bool device_init() {
+   #if VALIDATE_FIRMWARE
++  // When Bluetooth is compiled out (USB-serial-only boards), bt_init() never
++  // runs and bt_ready stays false. The signature hash already omits the BT MAC
++  // in that case, so gate on bt_ready only when BT/BLE is actually present;
++  // otherwise hw_ready would never be set and the radio could not be started.
++  #if HAS_BLUETOOTH == true || HAS_BLE == true
+   if (bt_ready) {
++  #else
++  if (true) {
++  #endif
+     #if MCU_VARIANT == MCU_ESP32
+     for (uint8_t i=0; i<EEPROM_SIG_LEN; i++){dev_eeprom_signature[i]=EEPROM.read(eeprom_addr(ADDR_SIGNATURE+i));}
+     mbedtls_md_context_t ctx;
+diff --git a/Display.h b/Display.h
+index 4b60819..0a46400 100644
+--- a/Display.h
++++ b/Display.h
+@@ -97,6 +97,14 @@ void busyCallback(const void* p) { display_callback(); }
+   #define SCL_OLED 17
+   #define SDA_OLED 18
+   #endif
++#elif BOARD_MODEL == BOARD_EBYTE_EORA_S3
++  #if DISPLAY == OLED
++  #define DISP_RST -1
++  #define DISP_ADDR 0x3C
++  #define SCL_OLED 17
++  #define SDA_OLED 18
++  #define DISP_CUSTOM_ADDR true
++  #endif
+ #elif BOARD_MODEL == BOARD_RAK4631 || BOARD_MODEL == BOARD_OPENCOM_XL
+   #if DISPLAY == OLED
+   // RAK1921/SSD1306
+@@ -327,6 +335,8 @@ bool display_init() {
+       digitalWrite(pin_display_en, HIGH);
+     #elif BOARD_MODEL == BOARD_T3S3
+       Wire.begin(SDA_OLED, SCL_OLED);
++    #elif BOARD_MODEL == BOARD_EBYTE_EORA_S3
++      Wire.begin(SDA_OLED, SCL_OLED);
+     #elif BOARD_MODEL == BOARD_HELTEC32_V2
+       Wire.begin(SDA_OLED, SCL_OLED);
+     #elif BOARD_MODEL == BOARD_HELTEC32_V3
+diff --git a/Documentation/BUILDING.md b/Documentation/BUILDING.md
+index d995d31..cc3bdd0 100644
+--- a/Documentation/BUILDING.md
++++ b/Documentation/BUILDING.md
+@@ -72,6 +72,7 @@ After flashing a custom board, you will also need to provision the EEPROM before
+ 0xA9: [820000000, 1020000000, 17, "820 - 1020 MHz", "rnode_firmware.hex", "SX1276"],
+ 0xA1: [410000000, 525000000, 22, "410 - 525 MHz", "rnode_firmware_t3s3.zip", "SX1268"],
+ 0xA6: [820000000, 1020000000, 22, "820 - 960 MHz", "rnode_firmware_t3s3.zip", "SX1262"],
++0xD8: [820000000, 1020000000, 22, "820 - 1020 MHz", "rnode_firmware_ebyte_eora_s3.zip", "SX1262"],
+ 0xA2: [410000000, 525000000, 17, "410 - 525 MHz", "rnode_firmware_ng21.zip", "SX1278"],
+ 0xA7: [820000000, 1020000000, 17, "820 - 1020 MHz", "rnode_firmware_ng21.zip", "SX1276"],
+ 0xA3: [410000000, 525000000, 17, "410 - 525 MHz", "rnode_firmware_ng20.zip", "SX1278"],
+diff --git a/Makefile b/Makefile
+index 3a86441..fa31152 100644
+--- a/Makefile
++++ b/Makefile
+@@ -92,6 +92,9 @@ firmware-t3s3:
+ firmware-t3s3_sx126x:
+ 	arduino-cli compile --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc" $(COMMON_BUILD_FLAGS) --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x42\" \"-DBOARD_VARIANT=0xA1\""
+ 
++firmware-ebyte_eora_s3:
++	arduino-cli compile --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc" $(COMMON_BUILD_FLAGS) --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x46\" \"-DBOARD_VARIANT=0xD8\""
++
+ firmware-t3s3_sx1280_pa:
+ 	arduino-cli compile --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc" $(COMMON_BUILD_FLAGS) --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x42\" \"-DBOARD_VARIANT=0xAC\""
+ 
+@@ -440,6 +443,15 @@ release-t3s3:
+ 	zip --junk-paths ./Release/rnode_firmware_t3s3_sx126x.zip ./Release/esptool/esptool.py ./Release/console_image.bin build/rnode_firmware_t3s3_sx126x.boot_app0 build/rnode_firmware_t3s3_sx126x.bin build/rnode_firmware_t3s3_sx126x.bootloader build/rnode_firmware_t3s3_sx126x.partitions
+ 	rm -r build
+ 
++release-ebyte_eora_s3:
++	arduino-cli compile --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc" $(COMMON_BUILD_FLAGS) --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x46\" \"-DBOARD_VARIANT=0xD8\""
++	cp ~/.arduino15/packages/esp32/hardware/esp32/$(ARDUINO_ESP_CORE_VER)/tools/partitions/boot_app0.bin build/rnode_firmware_ebyte_eora_s3.boot_app0
++	cp build/esp32.esp32.esp32s3/RNode_Firmware_CE.ino.bin build/rnode_firmware_ebyte_eora_s3.bin
++	cp build/esp32.esp32.esp32s3/RNode_Firmware_CE.ino.bootloader.bin build/rnode_firmware_ebyte_eora_s3.bootloader
++	cp build/esp32.esp32.esp32s3/RNode_Firmware_CE.ino.partitions.bin build/rnode_firmware_ebyte_eora_s3.partitions
++	zip --junk-paths ./Release/rnode_firmware_ebyte_eora_s3.zip ./Release/esptool/esptool.py ./Release/console_image.bin build/rnode_firmware_ebyte_eora_s3.boot_app0 build/rnode_firmware_ebyte_eora_s3.bin build/rnode_firmware_ebyte_eora_s3.bootloader build/rnode_firmware_ebyte_eora_s3.partitions
++	rm -r build
++
+ release-t3s3_sx127x:
+ 	arduino-cli compile --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc" -e --build-property "build.partitions=no_ota" --build-property "upload.maximum_size=2097152" --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x42\" \"-DBOARD_VARIANT=0xA5\""
+ 	cp ~/.arduino15/packages/esp32/hardware/esp32/$(ARDUINO_ESP_CORE_VER)/tools/partitions/boot_app0.bin build/rnode_firmware_t3s3_sx127x.boot_app0
+diff --git a/Power.h b/Power.h
+index 8856316..97ed327 100644
+--- a/Power.h
++++ b/Power.h
+@@ -98,6 +98,22 @@
+   bool bat_voltage_dropping = false;
+   float bat_delay_v = 0;
+   float bat_state_change_v = 0;
++#elif BOARD_MODEL == BOARD_EBYTE_EORA_S3
++  #define BAT_V_MIN       3.15
++  #define BAT_V_MAX       4.217
++  #define BAT_V_CHG       4.48
++  #define BAT_V_FLOAT     4.33
++  #define BAT_SAMPLES     5
++  const uint8_t pin_vbat = 1; // LiPo divider (2x 1M) on GPIO1
++  float bat_p_samples[BAT_SAMPLES];
++  float bat_v_samples[BAT_SAMPLES];
++  uint8_t bat_samples_count = 0;
++  int bat_discharging_samples = 0;
++  int bat_charging_samples = 0;
++  int bat_charged_samples = 0;
++  bool bat_voltage_dropping = false;
++  float bat_delay_v = 0;
++  float bat_state_change_v = 0;
+ #elif BOARD_MODEL == BOARD_TDECK
+   #define BAT_V_MIN       3.15
+   #define BAT_V_MAX       4.3
+@@ -174,7 +190,7 @@ uint8_t pmu_rc = 0;
+ void kiss_indicate_battery();
+ 
+ void measure_battery() {
+-  #if BOARD_MODEL == BOARD_RNODE_NG_21 || BOARD_MODEL == BOARD_LORA32_V2_1 || BOARD_MODEL == BOARD_HELTEC32_V3 || BOARD_MODEL == BOARD_TDECK || BOARD_MODEL == BOARD_T3S3 || BOARD_MODEL == BOARD_HELTEC_T114 || BOARD_MODEL == BOARD_TECHO
++  #if BOARD_MODEL == BOARD_RNODE_NG_21 || BOARD_MODEL == BOARD_LORA32_V2_1 || BOARD_MODEL == BOARD_HELTEC32_V3 || BOARD_MODEL == BOARD_TDECK || BOARD_MODEL == BOARD_T3S3 || BOARD_MODEL == BOARD_EBYTE_EORA_S3 || BOARD_MODEL == BOARD_HELTEC_T114 || BOARD_MODEL == BOARD_TECHO
+     battery_installed = true;
+     battery_indeterminate = true;
+ 
+@@ -182,6 +198,9 @@ void measure_battery() {
+       float battery_measurement = (float)(analogRead(pin_vbat)) * 0.0041;
+     #elif BOARD_MODEL == BOARD_T3S3
+       float battery_measurement = (float)(analogRead(pin_vbat)) / 4095.0*6.7828;
++    #elif BOARD_MODEL == BOARD_EBYTE_EORA_S3
++      // 2x 1M LiPo divider on GPIO1; multiplier from Meshtastic EoRa-S3 (2.11 * 3.3V ref). Approximate - uncalibrated.
++      float battery_measurement = (float)(analogRead(pin_vbat)) / 4095.0*6.96;
+     #elif BOARD_MODEL == BOARD_HELTEC_T114
+       float battery_measurement = (float)(analogRead(pin_vbat)) * 0.017165;
+     #elif BOARD_MODEL == BOARD_TECHO
+@@ -434,7 +453,7 @@ void update_pmu() {
+ }
+ 
+ bool init_pmu() {
+-  #if BOARD_MODEL == BOARD_RNODE_NG_21 || BOARD_MODEL == BOARD_LORA32_V2_1 || BOARD_MODEL == BOARD_TDECK || BOARD_MODEL == BOARD_T3S3 || BOARD_MODEL == BOARD_TECHO
++  #if BOARD_MODEL == BOARD_RNODE_NG_21 || BOARD_MODEL == BOARD_LORA32_V2_1 || BOARD_MODEL == BOARD_TDECK || BOARD_MODEL == BOARD_T3S3 || BOARD_MODEL == BOARD_EBYTE_EORA_S3 || BOARD_MODEL == BOARD_TECHO
+     pinMode(pin_vbat, INPUT);
+     return true;
+   #elif BOARD_MODEL == BOARD_HELTEC32_V3
+diff --git a/Radio.cpp b/Radio.cpp
+index 52364dd..f686688 100644
+--- a/Radio.cpp
++++ b/Radio.cpp
+@@ -124,6 +124,11 @@ bool sx126x::preInit() {
+     _spiModem->begin();
+   #endif
+ 
++  #if BOARD_MODEL == BOARD_EBYTE_EORA_S3
++    reset();
++    delay(50);
++  #endif
++
+   // check version (retry for up to 2 seconds)
+   // TODO: Actually read version registers, not syncwords
+   long start = millis();
+@@ -709,6 +714,8 @@ void sx126x::enableTCXO() {
+       uint8_t buf[4] = {MODE_TCXO_1_8V_6X, 0x00, 0x00, 0xFF};
+     #elif BOARD_MODEL == BOARD_TBEAM_S_V1
+       uint8_t buf[4] = {MODE_TCXO_1_8V_6X, 0x00, 0x00, 0xFF};
++    #elif BOARD_MODEL == BOARD_EBYTE_EORA_S3
++      uint8_t buf[4] = {MODE_TCXO_1_8V_6X, 0x00, 0x00, 0xFF};
+     #elif BOARD_MODEL == BOARD_HELTEC_T114
+       uint8_t buf[4] = {MODE_TCXO_1_8V_6X, 0x00, 0x00, 0xFF};
+     #elif BOARD_MODEL == BOARD_E22_ESP32
+diff --git a/Utilities.h b/Utilities.h
+index 3c0f06e..4050a1b 100644
+--- a/Utilities.h
++++ b/Utilities.h
+@@ -205,6 +205,13 @@ uint8_t boot_vector = 0x00;
+ 		void led_tx_off() { digitalWrite(pin_led_tx, LOW); }
+ 		void led_id_on()  { }
+ 		void led_id_off() { }
++	#elif BOARD_MODEL == BOARD_EBYTE_EORA_S3
++		void led_rx_on()  { digitalWrite(pin_led_rx, HIGH); }
++		void led_rx_off() {	digitalWrite(pin_led_rx, LOW); }
++		void led_tx_on()  { digitalWrite(pin_led_tx, HIGH); }
++		void led_tx_off() { digitalWrite(pin_led_tx, LOW); }
++		void led_id_on()  { }
++		void led_id_off() { }
+ 	#elif BOARD_MODEL == BOARD_E22_ESP32
+ 		void led_rx_on()  { digitalWrite(pin_led_rx, HIGH); }
+ 		void led_rx_off() {	digitalWrite(pin_led_rx, LOW); }
+@@ -1285,6 +1292,7 @@ void setTXPower(RadioInterface* radio, int txp) {
+ 
+     if (model == MODEL_DD) radio->setTxPower(txp, PA_OUTPUT_PA_BOOST_PIN);
+     if (model == MODEL_DE) radio->setTxPower(txp, PA_OUTPUT_PA_BOOST_PIN);
++    if (model == MODEL_D8) radio->setTxPower(txp, PA_OUTPUT_PA_BOOST_PIN);
+ 
+     if (model == MODEL_E4) radio->setTxPower(txp, PA_OUTPUT_PA_BOOST_PIN);
+     if (model == MODEL_E9) radio->setTxPower(txp, PA_OUTPUT_PA_BOOST_PIN);
+@@ -1515,7 +1523,7 @@ bool eeprom_product_valid() {
+   #endif
+ 
+ 	#if PLATFORM == PLATFORM_ESP32
+-	if (rval == PRODUCT_RNODE || rval == BOARD_RNODE_NG_20 || rval == BOARD_RNODE_NG_21 || rval == PRODUCT_HMBRW || rval == PRODUCT_TBEAM || rval == PRODUCT_T32_10 || rval == PRODUCT_T32_20 || rval == PRODUCT_T32_21 || rval == PRODUCT_H32_V2 || rval == PRODUCT_H32_V3 || rval == PRODUCT_TDECK_V1 || rval == PRODUCT_TBEAM_S_V1 || rval == PRODUCT_H_W_PAPER || rval == PRODUCT_XIAO_S3) {
++	if (rval == PRODUCT_RNODE || rval == BOARD_RNODE_NG_20 || rval == BOARD_RNODE_NG_21 || rval == PRODUCT_HMBRW || rval == PRODUCT_TBEAM || rval == PRODUCT_T32_10 || rval == PRODUCT_T32_20 || rval == PRODUCT_T32_21 || rval == PRODUCT_H32_V2 || rval == PRODUCT_H32_V3 || rval == PRODUCT_TDECK_V1 || rval == PRODUCT_TBEAM_S_V1 || rval == PRODUCT_H_W_PAPER || rval == PRODUCT_XIAO_S3 || rval == PRODUCT_EBYTE_EORA) {
+ 	#elif PLATFORM == PLATFORM_NRF52
+ 	if (rval == PRODUCT_RAK4631 || rval == PRODUCT_HELTEC_T114 || rval == PRODUCT_OPENCOM_XL || rval == PRODUCT_TECHO || rval == PRODUCT_HMBRW) {
+ 	#else
+@@ -1541,6 +1549,8 @@ bool eeprom_model_valid() {
+ 	if (model == MODEL_A2 || model == MODEL_A7) {
+ 	#elif BOARD_MODEL == BOARD_T3S3
+ 	if (model == MODEL_A1 || model == MODEL_A6 || model == MODEL_A5 || model == MODEL_AA || model == MODEL_AC) {
++	#elif BOARD_MODEL == BOARD_EBYTE_EORA_S3
++	if (model == MODEL_D8) {
+ 	#elif BOARD_MODEL == BOARD_HMBRW
+ 	if (model == MODEL_FF || model == MODEL_FE) {
+ 	#elif BOARD_MODEL == BOARD_TBEAM
