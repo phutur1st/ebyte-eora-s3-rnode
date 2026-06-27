@@ -72,6 +72,29 @@ docs/
 
 The shipped binaries are produced this way; see [build.sh](firmware/build.sh).
 
+### Flashing a source build (the upstream way)
+
+If you're working from a patched RNode CE checkout (what `build.sh` produces in
+`firmware/.build/RNode_Firmware_CE`), the patch adds the standard CE make
+targets, so you can build, flash, and provision in one step instead of the
+manual esptool + `-r` + bless sequence:
+
+```bash
+make firmware-ebyte_eora_s3                          # compile
+make upload-ebyte_eora_s3 port=/dev/cu.usbmodemXXXX  # flash + console image + firmware-hash
+rnodeconf "$PORT" -r --platform ESP32 --model d8 --product ec --hwrev 1  # first time only: provision/sign
+```
+
+`upload-ebyte_eora_s3` runs `arduino-cli upload` (which preserves an existing
+EEPROM provisioning), flashes the OLED console image, and sets the firmware hash
+via CE's own `partition_hashes` tool — the same thing `tools/rnode_bless_fw.py`
+does, just the canonical way. This is the flow used for the upstream PR.
+
+> **Two audiences, two flows.** End users flashing the prebuilt image in
+> `firmware/bin/` should follow [docs/flashing.md](docs/flashing.md) (esptool +
+> `tools/`). The `make upload` flow above is for source builders / contributors
+> and isn't needed if you're just flashing the released `.bin`.
+
 ## Board summary
 
 ESP32-S3 + SX1262, 850–960 MHz, 22 dBm. **Crystal, not TCXO.** IDs `ec:d8:46`.

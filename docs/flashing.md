@@ -1,5 +1,10 @@
 # Flashing & first bring-up
 
+This guide covers flashing the **prebuilt image** in `firmware/bin/` with
+esptool. If you're building from source instead, the `make upload-ebyte_eora_s3`
+target does flash + console image + firmware-hash in one step — see
+[Building from source](../README.md#building-from-source).
+
 The board is an ESP32-S3 with native USB. On macOS it appears as
 `/dev/cu.usbmodemXXXX`; on Linux as `/dev/ttyACMX`.
 
