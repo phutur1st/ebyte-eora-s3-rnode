@@ -79,26 +79,6 @@ index c0f6cc4..219a910 100644
   #elif BOARD_MODEL == BOARD_XIAO_S3
        #define IS_ESP32S3 true
  
-diff --git a/Device.h b/Device.h
-index fb250f4..8642614 100644
---- a/Device.h
-+++ b/Device.h
-@@ -214,7 +214,15 @@ bool device_firmware_ok() {
- #if MCU_VARIANT == MCU_ESP32 || MCU_VARIANT == MCU_NRF52
- bool device_init() {
-   #if VALIDATE_FIRMWARE
-+  // When Bluetooth is compiled out (USB-serial-only boards), bt_init() never
-+  // runs and bt_ready stays false. The signature hash already omits the BT MAC
-+  // in that case, so gate on bt_ready only when BT/BLE is actually present;
-+  // otherwise hw_ready would never be set and the radio could not be started.
-+  #if HAS_BLUETOOTH == true || HAS_BLE == true
-   if (bt_ready) {
-+  #else
-+  if (true) {
-+  #endif
-     #if MCU_VARIANT == MCU_ESP32
-     for (uint8_t i=0; i<EEPROM_SIG_LEN; i++){dev_eeprom_signature[i]=EEPROM.read(eeprom_addr(ADDR_SIGNATURE+i));}
-     mbedtls_md_context_t ctx;
 diff --git a/Display.h b/Display.h
 index 4b60819..d5ba14b 100644
 --- a/Display.h
