@@ -108,7 +108,7 @@ index fb250f4..8642614 100644
      for (uint8_t i=0; i<EEPROM_SIG_LEN; i++){dev_eeprom_signature[i]=EEPROM.read(eeprom_addr(ADDR_SIGNATURE+i));}
      mbedtls_md_context_t ctx;
 diff --git a/Display.h b/Display.h
-index 4b60819..0a46400 100644
+index 4b60819..d5ba14b 100644
 --- a/Display.h
 +++ b/Display.h
 @@ -97,6 +97,14 @@ void busyCallback(const void* p) { display_callback(); }
@@ -135,6 +135,22 @@ index 4b60819..0a46400 100644
      #elif BOARD_MODEL == BOARD_HELTEC32_V2
        Wire.begin(SDA_OLED, SCL_OLED);
      #elif BOARD_MODEL == BOARD_HELTEC32_V3
+@@ -409,6 +419,15 @@ bool display_init() {
+           display_blanking_timeout = db_timeout*1000;
+         }
+       }
++      #if BOARD_MODEL == BOARD_EBYTE_EORA_S3
++      else {
++        // No user button to wake the display, so enable blanking by default at
++        // the upstream timeout (DISPLAY_BLANKING_TIMEOUT, 15s). Still fully
++        // overridable with `rnodeconf --timeout <s>` (--timeout 0 disables),
++        // which sets ADDR_CONF_BSET and takes the branch above.
++        display_blanking_enabled = true;
++      }
++      #endif
+     #elif MCU_VARIANT == MCU_NRF52
+       if (eeprom_read(eeprom_addr(ADDR_CONF_BSET)) == CONF_OK_BYTE) {
+         uint8_t db_timeout = eeprom_read(eeprom_addr(ADDR_CONF_DBLK));
 diff --git a/Documentation/BUILDING.md b/Documentation/BUILDING.md
 index d995d31..cc3bdd0 100644
 --- a/Documentation/BUILDING.md
