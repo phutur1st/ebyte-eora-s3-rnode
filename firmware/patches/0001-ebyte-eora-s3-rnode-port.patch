@@ -80,7 +80,7 @@ index c0f6cc4..219a910 100644
        #define IS_ESP32S3 true
  
 diff --git a/Display.h b/Display.h
-index 4b60819..0a46400 100644
+index 4b60819..14b852e 100644
 --- a/Display.h
 +++ b/Display.h
 @@ -97,6 +97,14 @@ void busyCallback(const void* p) { display_callback(); }
@@ -107,6 +107,17 @@ index 4b60819..0a46400 100644
      #elif BOARD_MODEL == BOARD_HELTEC32_V2
        Wire.begin(SDA_OLED, SCL_OLED);
      #elif BOARD_MODEL == BOARD_HELTEC32_V3
+@@ -490,6 +500,10 @@ bool display_init() {
+           #elif BOARD_MODEL == BOARD_TDECK
+             disp_mode = DISP_MODE_PORTRAIT;
+             display.setRotation(3);
++          #elif BOARD_MODEL == BOARD_EBYTE_EORA_S3
++            // 0.96" SSD1306 is mounted landscape (128x64) on this board
++            disp_mode = DISP_MODE_LANDSCAPE;
++            display.setRotation(0);
+           #else
+             disp_mode = DISP_MODE_PORTRAIT;
+             display.setRotation(3);
 diff --git a/Documentation/BUILDING.md b/Documentation/BUILDING.md
 index d995d31..b3f5558 100644
 --- a/Documentation/BUILDING.md
